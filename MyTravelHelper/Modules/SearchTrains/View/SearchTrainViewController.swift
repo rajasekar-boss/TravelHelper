@@ -14,16 +14,25 @@ class SearchTrainViewController: UIViewController {
     @IBOutlet weak var destinationTextField: UITextField!
     @IBOutlet weak var sourceTxtField: UITextField!
     @IBOutlet weak var trainsListTable: UITableView!
-
+    
+    // MARK: - Favourite station functionality
+    @IBOutlet weak var chooseFavouriteButton: UIButton!
+    
     var stationsList:[Station] = [Station]()
     var trains:[StationTrain] = [StationTrain]()
     var presenter:ViewToPresenterProtocol?
     var dropDown = DropDown()
     var transitPoints:(source:String,destination:String) = ("","")
 
+    // MARK: - Favourite station functionality
+    var favouriteStation: StationTrain?
+
     override func viewDidLoad() {
         super.viewDidLoad()
         trainsListTable.isHidden = true
+
+        // MARK: - Favourite station functionality
+        setupFavouriteButton()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -39,9 +48,23 @@ class SearchTrainViewController: UIViewController {
         showProgressIndicator(view: self.view)
         presenter?.searchTapped(source: transitPoints.source, destination: transitPoints.destination)
     }
+
+    // MARK: - Favourite station functionality
+    @IBAction func chooseFavouriteTapped(_ sender: Any) {
+        transitPoints.source = favouriteStation?.stationFullName ?? ""
+        transitPoints.destination = favouriteStation?.destinationDetails?.locationFullName ?? ""
+        self.sourceTxtField.text = transitPoints.source
+        self.destinationTextField.text = transitPoints.destination
+    }
 }
 
 extension SearchTrainViewController:PresenterToViewProtocol {
+    func showGenericErrorMessage() {
+        trainsListTable.isHidden = true
+        hideProgressIndicator(view: self.view)
+        showAlert(title: "Error", message: "Something went wrong. Please try again.", actionTitle: "Okay")
+    }
+    
     func showNoInterNetAvailabilityMessage() {
         trainsListTable.isHidden = true
         hideProgressIndicator(view: self.view)
@@ -56,9 +79,9 @@ extension SearchTrainViewController:PresenterToViewProtocol {
 
     func updateLatestTrainList(trainsList: [StationTrain]) {
         hideProgressIndicator(view: self.view)
-        trains = trainsList
-        trainsListTable.isHidden = false
-        trainsListTable.reloadData()
+        self.trains = trainsList
+        self.trainsListTable.isHidden = false
+        self.trainsListTable.reloadData()
     }
 
     func showNoTrainsFoundAlert() {
@@ -93,8 +116,8 @@ extension SearchTrainViewController:UITextFieldDelegate {
         dropDown = DropDown()
         dropDown.anchorView = textField
         dropDown.direction = .bottom
-        dropDown.bottomOffset = CGPoint(x: 0, y:(dropDown.anchorView?.plainView.bounds.height)!)
-        dropDown.dataSource = stationsList.map {$0.stationDesc}
+        dropDown.bottomOffset = CGPoint(x: 0, y:(dropDown.anchorView?.plainView.bounds.height) ?? 0)
+        dropDown.dataSource = stationsList.compactMap { $0.stationDesc }
         dropDown.selectionAction = { (index: Int, item: String) in
             if textField == self.sourceTxtField {
                 self.transitPoints.source = item
@@ -120,7 +143,7 @@ extension SearchTrainViewController:UITextFieldDelegate {
                 desiredSearchText = String(desiredSearchText.dropLast())
             }
 
-            dropDown.dataSource = stationsList
+            dropDown.dataSource = stationsList.compactMap { $0.stationDesc }
             dropDown.show()
             dropDown.reloadAllComponents()
         }
@@ -134,19 +157,32 @@ extension SearchTrainViewController:UITableViewDataSource,UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "train", for: indexPath) as! TrainInfoCell
-        let train = trains[indexPath.row]
-        cell.trainCode.text = train.trainCode
-        cell.souceInfoLabel.text = train.stationFullName
-        cell.sourceTimeLabel.text = train.expDeparture
-        if let _destinationDetails = train.destinationDetails {
-            cell.destinationInfoLabel.text = _destinationDetails.locationFullName
-            cell.destinationTimeLabel.text = _destinationDetails.expDeparture
+        guard let cell = tableView.dequeueReusableCell(withIdentifier: "train", for: indexPath) as? TrainInfoCell else {
+            return UITableViewCell()
+        }
+        cell.train = trains[indexPath.row]
+
+        // MARK: - Favourite station functionality
+        cell.favouriteStation = { [weak self] station in
+            self?.presenter?.updateFavouriteStation(station)
+            self?.setupFavouriteButton()
         }
         return cell
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 140
+        return 220
+    }
+}
+
+// MARK: - Favourite station functionality
+extension SearchTrainViewController {
+    private func setupFavouriteButton() {
+        chooseFavouriteButton.isHidden = true
+        guard let favouriteStation = presenter?.fetchFavouriteStation() else {
+            return
+        }
+        self.favouriteStation = favouriteStation
+        chooseFavouriteButton.isHidden = false
     }
 }

@@ -17,11 +17,11 @@ struct Stations: Codable {
 }
 
 struct Station: Codable {
-    var stationDesc: String
-    var stationLatitude: Double
-    var stationLongitude: Double
-    var stationCode: String
-    var stationId: Int
+    var stationDesc: String?
+    var stationLatitude: Double?
+    var stationLongitude: Double?
+    var stationCode: String?
+    var stationId: Int?
 
     enum CodingKeys: String, CodingKey {
         case stationDesc = "StationDesc"
@@ -31,7 +31,7 @@ struct Station: Codable {
         case stationId = "StationId"
     }
 
-    init(desc: String, latitude: Double, longitude: Double, code: String, stationId: Int) {
+    init(desc: String?, latitude: Double?, longitude: Double?, code: String?, stationId: Int?) {
         self.stationDesc = desc
         self.stationLatitude = latitude
         self.stationLongitude = longitude
@@ -41,11 +41,11 @@ struct Station: Codable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        let desc = try values.decode(String.self, forKey: .stationDesc)
-        let lat = try values.decode(Double.self, forKey: .stationLatitude)
-        let long = try values.decode(Double.self, forKey: .stationLongitude)
-        let code = try values.decode(String.self, forKey: .stationCode)
-        let stationId = try values.decode(Int.self, forKey: .stationId)
+        let desc = try values.decodeIfPresent(String.self, forKey: .stationDesc)
+        let lat = try values.decodeIfPresent(Double.self, forKey: .stationLatitude)
+        let long = try values.decodeIfPresent(Double.self, forKey: .stationLongitude)
+        let code = try values.decodeIfPresent(String.self, forKey: .stationCode)
+        let stationId = try values.decodeIfPresent(Int.self, forKey: .stationId)
 
         self.init(desc: desc, latitude: lat, longitude: long, code: code, stationId: stationId)
     }

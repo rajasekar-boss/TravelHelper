@@ -27,29 +27,43 @@ class SearchTrainPresenter:ViewToPresenterProtocol {
 
     private func getStationCode(stationName:String)->String {
         let stationCode = stationsList.filter{$0.stationDesc == stationName}.first
-        return stationCode?.stationCode.lowercased() ?? ""
+        return stationCode?.stationCode?.lowercased() ?? ""
     }
 }
 
 extension SearchTrainPresenter: InteractorToPresenterProtocol {
+    func showGenericErrorMessage() {
+        view?.showGenericErrorMessage()
+    }
+    
     func showNoInterNetAvailabilityMessage() {
-        view!.showNoInterNetAvailabilityMessage()
+        view?.showNoInterNetAvailabilityMessage()
     }
 
     func showNoTrainAvailbilityFromSource() {
-        view!.showNoTrainAvailbilityFromSource()
+        view?.showNoTrainAvailbilityFromSource()
     }
 
     func fetchedTrainsList(trainsList: [StationTrain]?) {
-        if let _trainsList = trainsList {
-            view!.updateLatestTrainList(trainsList: _trainsList)
-        }else {
-            view!.showNoTrainsFoundAlert()
+        if let _trainsList = trainsList, !_trainsList.isEmpty {
+            view?.updateLatestTrainList(trainsList: _trainsList)
+        } else {
+            view?.showNoTrainsFoundAlert()
         }
     }
     
     func stationListFetched(list: [Station]) {
         stationsList = list
-        view!.saveFetchedStations(stations: list)
+        view?.saveFetchedStations(stations: list)
+    }
+}
+
+// MARK: - Favourite station functionality
+extension SearchTrainPresenter {
+    func fetchFavouriteStation() -> StationTrain? {
+        interactor?.fetchFavouriteStation()
+    }
+    func updateFavouriteStation(_ station: StationTrain) {
+        interactor?.updateFavouriteStation(station)
     }
 }

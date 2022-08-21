@@ -7,79 +7,115 @@
 //
 
 import Foundation
-import XMLParsing
-import Alamofire
 
 class SearchTrainInteractor: PresenterToInteractorProtocol {
     var _sourceStationCode = String()
     var _destinationStationCode = String()
     var presenter: InteractorToPresenterProtocol?
+    var searchTrainService: SearchTrainServiceProtocol?
 
     func fetchallStations() {
-        if Reach().isNetworkReachable() == true {
-            Alamofire.request("http://api.irishrail.ie/realtime/realtime.asmx/getAllStationsXML")
-                .response { (response) in
-                let station = try? XMLDecoder().decode(Stations.self, from: response.data!)
-                self.presenter!.stationListFetched(list: station!.stationsList)
+        let url = SearchTrainURL.allStations.url()
+        searchTrainService?.fetchAllStations(url: url) { [weak self] result in
+            switch result {
+            case .success(let stations):
+                self?.presenter?.stationListFetched(list: stations)
+            case .failure(let error):
+                switch error {
+                case .unReachability:
+                    self?.presenter?.showNoInterNetAvailabilityMessage()
+                default:
+                    self?.presenter?.showGenericErrorMessage()
+                }
             }
-        } else {
-            self.presenter!.showNoInterNetAvailabilityMessage()
         }
     }
 
     func fetchTrainsFromSource(sourceCode: String, destinationCode: String) {
         _sourceStationCode = sourceCode
         _destinationStationCode = destinationCode
-        let urlString = "http://api.irishrail.ie/realtime/realtime.asmx/getStationDataByCodeXML?StationCode=\(sourceCode)"
-        if Reach().isNetworkReachable() {
-            Alamofire.request(urlString).response { (response) in
-                let stationData = try? XMLDecoder().decode(StationData.self, from: response.data!)
-                if let _trainsList = stationData?.trainsList {
-                    self.proceesTrainListforDestinationCheck(trainsList: _trainsList)
+        let url = SearchTrainURL.stationData.url(parameters: [sourceCode])
+
+        searchTrainService?.fetchTrainsFromSource(url: url) { [weak self] result in
+            switch result {
+            case .success(let trainsList):
+                if !trainsList.isEmpty {
+                    self?.proceesTrainListforDestinationCheck(trainsList: trainsList)
                 } else {
-                    self.presenter!.showNoTrainAvailbilityFromSource()
+                    self?.presenter?.showNoTrainAvailbilityFromSource()
+                }
+            case .failure(let error):
+                switch error {
+                case .unReachability:
+                    self?.presenter?.showNoInterNetAvailabilityMessage()
+                default:
+                    self?.presenter?.showGenericErrorMessage()
                 }
             }
-        } else {
-            self.presenter!.showNoInterNetAvailabilityMessage()
         }
     }
     
     private func proceesTrainListforDestinationCheck(trainsList: [StationTrain]) {
         var _trainsList = trainsList
-        let today = Date()
         let group = DispatchGroup()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "dd/MM/yyyy"
-        let dateString = formatter.string(from: today)
+        let dateString = getTodayDate()
         
-        for index  in 0...trainsList.count-1 {
+        for index in 0...trainsList.count - 1 {
             group.enter()
-            let _urlString = "http://api.irishrail.ie/realtime/realtime.asmx/getTrainMovementsXML?TrainId=\(trainsList[index].trainCode)&TrainDate=\(dateString)"
-            if Reach().isNetworkReachable() {
-                Alamofire.request(_urlString).response { (movementsData) in
-                    let trainMovements = try? XMLDecoder().decode(TrainMovementsData.self, from: movementsData.data!)
-
-                    if let _movements = trainMovements?.trainMovements {
-                        let sourceIndex = _movements.firstIndex(where: {$0.locationCode.caseInsensitiveCompare(self._sourceStationCode) == .orderedSame})
-                        let destinationIndex = _movements.firstIndex(where: {$0.locationCode.caseInsensitiveCompare(self._destinationStationCode) == .orderedSame})
-                        let desiredStationMoment = _movements.filter{$0.locationCode.caseInsensitiveCompare(self._destinationStationCode) == .orderedSame}
-                        let isDestinationAvailable = desiredStationMoment.count == 1
-
-                        if isDestinationAvailable  && sourceIndex! < destinationIndex! {
-                            _trainsList[index].destinationDetails = desiredStationMoment.first
-                        }
+            let url = SearchTrainURL.trainMovements.url(parameters: [trainsList[index].trainCode ?? "", dateString])
+            
+            searchTrainService?.getTrainMovements(url: url) { [weak self] result in
+                switch result {
+                case .success(let trainMovements):
+                    if let _movements = trainMovements, let destinationDetails = self?.getDestinationDetails(for: _movements) {
+                            _trainsList[index].destinationDetails = destinationDetails
                     }
                     group.leave()
+                case .failure(let error):
+                    switch error {
+                    case .unReachability:
+                        self?.presenter?.showNoInterNetAvailabilityMessage()
+                    default:
+                        self?.presenter?.showGenericErrorMessage()
+                    }
                 }
-            } else {
-                self.presenter!.showNoInterNetAvailabilityMessage()
             }
         }
 
         group.notify(queue: DispatchQueue.main) {
             let sourceToDestinationTrains = _trainsList.filter{$0.destinationDetails != nil}
-            self.presenter!.fetchedTrainsList(trainsList: sourceToDestinationTrains)
+            self.presenter?.fetchedTrainsList(trainsList: sourceToDestinationTrains)
         }
+    }
+
+}
+
+extension SearchTrainInteractor {
+    private func getTodayDate() -> String {
+        return Date().getTodayDate(dateFormat: "dd/MM/yyyy")
+    }
+    
+    private func getDestinationDetails(for trainMovements: TrainMovementsData) -> TrainMovement? {
+        let _movements = trainMovements.trainMovements
+        let sourceIndex = _movements.firstIndex(where: {$0.locationCode?.caseInsensitiveCompare(self._sourceStationCode) == .orderedSame})
+        let destinationIndex = _movements.firstIndex(where: {$0.locationCode?.caseInsensitiveCompare(self._destinationStationCode) == .orderedSame})
+        let desiredStationMoment = _movements.filter{$0.locationCode?.caseInsensitiveCompare(self._destinationStationCode) == .orderedSame}
+        let isDestinationAvailable = desiredStationMoment.count == 1
+
+        if isDestinationAvailable  && sourceIndex! < destinationIndex! {
+            return desiredStationMoment.first
+        }
+        return nil
+    }
+
+}
+
+// MARK: - Favourite station functionality
+extension SearchTrainInteractor {
+    func updateFavouriteStation(_ station: StationTrain) {
+        StationTrain.updateFavouriteStation(station)
+    }
+    func fetchFavouriteStation() -> StationTrain? {
+        return StationTrain.fetchFavouriteStation()
     }
 }
